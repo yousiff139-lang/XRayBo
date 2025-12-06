@@ -14,6 +14,7 @@ export default function Home() {
   const dicomDetectionMutation = useDicomDetection();
   const [robotState, setRobotState] = useState<RobotState>("idle");
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [isRobotLoaded, setIsRobotLoaded] = useState(false);
 
   const handlePredict = async () => {
     if (files.length === 0) return;
@@ -63,6 +64,11 @@ export default function Home() {
   const handleStartGeneratingReport = () => {
     setIsGeneratingReport(true);
     setRobotState("generating_report");
+  };
+
+  // Handle 3D robot load
+  const handleRobotLoad = () => {
+    setIsRobotLoaded(true);
   };
 
   return (
@@ -135,19 +141,22 @@ export default function Home() {
 
         {/* RIGHT: 3D Robot with Chat Bubble */}
         <div className="lg:w-[55%] h-full relative">
-          {/* Robot Chat Bubble */}
+          {/* Robot Chat Bubble - Only shows after robot loads */}
           <RobotChatBubble
             state={robotState}
             conditionsFound={conditionsFound}
+            isRobotLoaded={isRobotLoaded}
           />
 
           {/* 3D Robot */}
           <SplineScene
             scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
             className="w-full h-full"
+            onLoad={handleRobotLoad}
           />
         </div>
       </div>
     </div>
   );
 }
+

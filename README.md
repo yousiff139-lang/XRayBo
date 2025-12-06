@@ -13,11 +13,22 @@
 
 ---
 
+## 📸 App Preview
+
+<div align="center">
+
+![XRayBo App Preview](docs/images/app_preview.png)
+
+</div>
+
+---
+
 ## ✨ Features
 
 - 🔍 **AI Detection** - Detects cavities, periapical lesions, and other dental conditions using Roboflow AI
 - 📝 **Smart Diagnosis Reports** - Generates comprehensive diagnostic reports with treatment recommendations using Google Gemini
 - 🤖 **Interactive 3D Robot** - Features an animated 3D robot assistant with contextual chat bubbles
+- 🎙️ **Voice Interaction** - Robot speaks messages with a natural male voice using Web Speech API
 - 📊 **PDF Export** - Export detailed diagnostic reports as PDF documents
 - 🎨 **Modern UI** - Beautiful glassmorphism design with smooth animations
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bot } from "lucide-react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Bot, Volume2, VolumeX } from "lucide-react";
 
 export type RobotState =
     | "idle"
@@ -15,6 +15,7 @@ interface RobotChatBubbleProps {
     state: RobotState;
     fileName?: string;
     conditionsFound?: number;
+    isRobotLoaded?: boolean;
 }
 
 const MESSAGES: Record<RobotState, string> = {
@@ -26,32 +27,157 @@ const MESSAGES: Record<RobotState, string> = {
     report_complete: "🎉 Your diagnosis report is ready! Check out the detailed analysis and recommendations below.",
 };
 
-export function RobotChatBubble({ state, fileName, conditionsFound }: RobotChatBubbleProps) {
+// Strip emojis and markdown for speech
+function cleanTextForSpeech(text: string): string {
+    return text
+        .replace(/[\u{1F600}-\u{1F64F}]/gu, '') // emoticons
+        .replace(/[\u{1F300}-\u{1F5FF}]/gu, '') // symbols & pictographs
+        .replace(/[\u{1F680}-\u{1F6FF}]/gu, '') // transport & map
+        .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '') // flags
+        .replace(/[\u{2600}-\u{26FF}]/gu, '')   // misc symbols
+        .replace(/[\u{2700}-\u{27BF}]/gu, '')   // dingbats
+        .replace(/\*\*/g, '')                    // bold markdown
+        .replace(/\*/g, '')                      // italic markdown
+        .trim();
+}
+
+export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoaded = true }: RobotChatBubbleProps) {
     const [isVisible, setIsVisible] = useState(false);
     const [displayedText, setDisplayedText] = useState("");
     const [isTyping, setIsTyping] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+    const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null);
+    const speakRetryRef = useRef<NodeJS.Timeout | null>(null);
 
     const message = MESSAGES[state];
 
-    // Animate visibility
+    // Custom message based on conditions found
+    const enhancedMessage = state === "prediction_complete" && conditionsFound !== undefined
+        ? `✅ Analysis complete! I found **${conditionsFound} condition${conditionsFound !== 1 ? 's' : ''}**. Click **Generate Diagnosis Report** for detailed recommendations!`
+        : message;
+
+    // Get the best male voice available
+    const getBestMaleVoice = useCallback(() => {
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length === 0) return null;
+
+        // Priority order for deep, natural male voices
+        const voicePriorities = [
+            // Windows voices
+            (v: SpeechSynthesisVoice) => v.name.includes('David'),
+            (v: SpeechSynthesisVoice) => v.name.includes('Mark'),
+            (v: SpeechSynthesisVoice) => v.name.includes('Guy'),
+            // Google voices
+            (v: SpeechSynthesisVoice) => v.name.includes('Google US English') && !v.name.includes('Female'),
+            (v: SpeechSynthesisVoice) => v.name.includes('Google UK English Male'),
+            // macOS voices
+            (v: SpeechSynthesisVoice) => v.name.includes('Alex'),
+            (v: SpeechSynthesisVoice) => v.name.includes('Daniel'),
+            // Generic English male
+            (v: SpeechSynthesisVoice) => v.lang.startsWith('en') && v.name.toLowerCase().includes('male'),
+            // Any English voice as fallback
+            (v: SpeechSynthesisVoice) => v.lang.startsWith('en-US'),
+            (v: SpeechSynthesisVoice) => v.lang.startsWith('en'),
+        ];
+
+        for (const check of voicePriorities) {
+            const voice = voices.find(check);
+            if (voice) return voice;
+        }
+
+        return voices[0];
+    }, []);
+
+    // Speech function - deep podcast-like male voice
+    const speakMessage = useCallback((text: string, retryCount = 0) => {
+        if (isMuted || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+
+        const voices = window.speechSynthesis.getVoices();
+
+        // If voices aren't loaded yet, retry after a delay (up to 5 retries)
+        if (voices.length === 0 && retryCount < 5) {
+            speakRetryRef.current = setTimeout(() => {
+                speakMessage(text, retryCount + 1);
+            }, 200);
+            return;
+        }
+
+        const cleanText = cleanTextForSpeech(text);
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+
+        // Deep, podcast-like male voice settings
+        utterance.pitch = 0.85;   // Slightly lower for deeper voice
+        utterance.rate = 0.92;    // Slightly slower for podcast feel
+        utterance.volume = 1.0;
+
+        // Get the best male voice
+        const voice = getBestMaleVoice();
+        if (voice) {
+            utterance.voice = voice;
+        }
+
+        speechSynthRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+    }, [isMuted, getBestMaleVoice]);
+
+    // Load voices on mount
     useEffect(() => {
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+        // Trigger voice loading
+        window.speechSynthesis.getVoices();
+
+        // Chrome requires listening for voiceschanged
+        const handleVoicesChanged = () => {
+            window.speechSynthesis.getVoices();
+        };
+
+        window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+
+        return () => {
+            window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+            if (speakRetryRef.current) {
+                clearTimeout(speakRetryRef.current);
+            }
+            if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+        };
+    }, []);
+
+    // Animate visibility - only show after robot is loaded
+    useEffect(() => {
+        if (!isRobotLoaded) {
+            setIsVisible(false);
+            return;
+        }
+
         setIsVisible(false);
         const timer = setTimeout(() => {
             setIsVisible(true);
             setIsTyping(true);
             setDisplayedText("");
-        }, 100);
+        }, 300); // Slight delay after robot loads
         return () => clearTimeout(timer);
-    }, [state]);
+    }, [state, isRobotLoaded]);
 
     // Typewriter effect
     useEffect(() => {
         if (!isVisible || !isTyping) return;
 
+        const targetMessage = state === "prediction_complete" && conditionsFound !== undefined
+            ? enhancedMessage
+            : message;
+
         let index = 0;
         const interval = setInterval(() => {
-            if (index < message.length) {
-                setDisplayedText(message.slice(0, index + 1));
+            if (index < targetMessage.length) {
+                setDisplayedText(targetMessage.slice(0, index + 1));
                 index++;
             } else {
                 setIsTyping(false);
@@ -60,12 +186,40 @@ export function RobotChatBubble({ state, fileName, conditionsFound }: RobotChatB
         }, 20); // Speed of typing
 
         return () => clearInterval(interval);
-    }, [isVisible, message, isTyping]);
+    }, [isVisible, message, isTyping, state, conditionsFound, enhancedMessage]);
 
-    // Custom message based on conditions found
-    const enhancedMessage = state === "prediction_complete" && conditionsFound !== undefined
-        ? `✅ Analysis complete! I found **${conditionsFound} condition${conditionsFound !== 1 ? 's' : ''}**. Click **Generate Diagnosis Report** for detailed recommendations!`
-        : displayedText;
+    // Speak when bubble becomes visible - triggers on each state change
+    useEffect(() => {
+        // Only speak when visible becomes true
+        if (!isVisible) return;
+
+        // Check other conditions at the time of speaking
+        if (!isRobotLoaded || isMuted) return;
+
+        // Speak after a short delay to let typewriter start
+        const speechDelay = setTimeout(() => {
+            const textToSpeak = state === "prediction_complete" && conditionsFound !== undefined
+                ? enhancedMessage
+                : message;
+            speakMessage(textToSpeak);
+        }, 600);
+
+        return () => clearTimeout(speechDelay);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isVisible, state]); // Trigger on visibility and state changes
+
+    // Toggle mute
+    const toggleMute = () => {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        setIsMuted(!isMuted);
+    };
+
+    // Don't render if robot hasn't loaded yet
+    if (!isRobotLoaded) {
+        return null;
+    }
 
     return (
         <div
@@ -86,7 +240,7 @@ export function RobotChatBubble({ state, fileName, conditionsFound }: RobotChatB
           shadow-2xl
           shadow-primary/20
         ">
-                    {/* Robot icon */}
+                    {/* Robot icon and mute button */}
                     <div className="flex items-start gap-3">
                         <div className="shrink-0 p-2 rounded-full bg-primary/20 border border-primary/30 animate-pulse">
                             <Bot className="size-5 text-primary" />
@@ -94,11 +248,23 @@ export function RobotChatBubble({ state, fileName, conditionsFound }: RobotChatB
 
                         {/* Message */}
                         <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-primary mb-1">AI Assistant</p>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="text-xs font-medium text-primary">AI Assistant</p>
+                                {/* Mute/Unmute button */}
+                                <button
+                                    onClick={toggleMute}
+                                    className="p-1 rounded-full hover:bg-white/10 transition-colors"
+                                    title={isMuted ? "Unmute voice" : "Mute voice"}
+                                >
+                                    {isMuted ? (
+                                        <VolumeX className="size-4 text-white/50" />
+                                    ) : (
+                                        <Volume2 className="size-4 text-primary" />
+                                    )}
+                                </button>
+                            </div>
                             <p className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap">
-                                {state === "prediction_complete" && conditionsFound !== undefined
-                                    ? enhancedMessage
-                                    : displayedText}
+                                {displayedText}
                                 {isTyping && <span className="animate-pulse">|</span>}
                             </p>
                         </div>
@@ -123,3 +289,4 @@ export function RobotChatBubble({ state, fileName, conditionsFound }: RobotChatB
         </div>
     );
 }
+
