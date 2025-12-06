@@ -3,9 +3,14 @@ export const FILE_SIZE_LIMITS = {
   MAX_SIZE: 10 * 1024 * 1024, // 10 MB
 } as const;
 
-export const SUPPORTED_DICOM_EXTENSIONS = {
+export const SUPPORTED_FILE_EXTENSIONS = {
   "application/dicom": [".dcm", ".rvg"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
 } as const;
+
+// Keep legacy name for backwards compatibility
+export const SUPPORTED_DICOM_EXTENSIONS = SUPPORTED_FILE_EXTENSIONS;
 
 // Utility function for consistent file size formatting
 export const formatFileSize = (bytes: number): string => {

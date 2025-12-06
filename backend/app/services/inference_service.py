@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def get_roboflow_client(api_key: str):
     """Create and cache Roboflow client"""
     client = InferenceHTTPClient(
-        api_url="https://serverless.roboflow.com", api_key=api_key
+        api_url="https://detect.roboflow.com", api_key=api_key
     )
     return client
 

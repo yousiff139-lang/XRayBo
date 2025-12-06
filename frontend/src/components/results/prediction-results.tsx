@@ -8,11 +8,13 @@ import { StatusBadges } from "./status-indicator";
 interface PredictionResultsProps {
   detectionProgress: DetectionProgress;
   onReportGenerated?: (fileId: string, report: DiagnosticReport) => void;
+  onStartGeneratingReport?: () => void;
 }
 
 export function PredictionResults({
   detectionProgress,
   onReportGenerated,
+  onStartGeneratingReport,
 }: PredictionResultsProps) {
   const { files } = useDroppedFilesStore();
   const { files: fileStates } = detectionProgress;
@@ -50,6 +52,7 @@ export function PredictionResults({
               fileState={fileState}
               fileData={fileData}
               onReportGenerated={onReportGenerated}
+              onStartGeneratingReport={onStartGeneratingReport}
             />
           );
         })}

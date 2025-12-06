@@ -40,12 +40,16 @@ export const generateAnnotatedImage = async (
       detections.forEach((detection) => {
         const boxColor = getDetectionColor(detection.class_id);
 
+        // Convert center-based coordinates (from Roboflow) to top-left corner
+        const boxX = detection.x - detection.width / 2;
+        const boxY = detection.y - detection.height / 2;
+
         // Draw bounding box
         ctx.strokeStyle = boxColor;
         ctx.lineWidth = 3;
         ctx.strokeRect(
-          detection.x,
-          detection.y,
+          boxX,
+          boxY,
           detection.width,
           detection.height
         );
@@ -60,8 +64,8 @@ export const generateAnnotatedImage = async (
         const labelHeight = 20;
 
         // Position label above the box, but ensure it stays within image bounds
-        const labelX = detection.x;
-        const labelY = Math.max(labelHeight, detection.y - 2);
+        const labelX = boxX;
+        const labelY = Math.max(labelHeight, boxY - 2);
 
         // Draw label background
         ctx.fillStyle = boxColor;
@@ -88,8 +92,8 @@ export const generateAnnotatedImage = async (
 export interface PDFExportData {
   report: DiagnosticReport;
   detections: Detection[];
-  metadata: DicomMetadata;
-  imageInfo: ImageInfo;
+  metadata: DicomMetadata | null;
+  imageInfo: ImageInfo | null;
   fileName: string;
   originalImageSrc?: string; // Add original image source for annotation
 }
@@ -101,7 +105,7 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
     if (
       data.originalImageSrc &&
       data.detections.length > 0 &&
-      data.imageInfo.original_shape
+      data.imageInfo?.original_shape
     ) {
       try {
         annotatedImageDataUrl = await generateAnnotatedImage(
@@ -143,7 +147,7 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
     pdf.setFontSize(10);
     pdf.setFont("helvetica", "normal");
 
-    if (data.metadata.patient_name) {
+    if (data.metadata?.patient_name) {
       pdf.text(
         `Patient Name: ${data.metadata.patient_name}`,
         margin,
@@ -152,17 +156,17 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
       yPosition += 6;
     }
 
-    if (data.metadata.patient_id) {
+    if (data.metadata?.patient_id) {
       pdf.text(`Patient ID: ${data.metadata.patient_id}`, margin, yPosition);
       yPosition += 6;
     }
 
-    if (data.metadata.study_date) {
+    if (data.metadata?.study_date) {
       pdf.text(`Study Date: ${data.metadata.study_date}`, margin, yPosition);
       yPosition += 6;
     }
 
-    if (data.metadata.modality) {
+    if (data.metadata?.modality) {
       pdf.text(`Modality: ${data.metadata.modality}`, margin, yPosition);
       yPosition += 6;
     }
@@ -184,8 +188,8 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
       yPosition += 10;
 
       // Calculate image dimensions to fit within content area
-      const originalWidth = data.imageInfo.original_shape?.[1] || 1;
-      const originalHeight = data.imageInfo.original_shape?.[0] || 1;
+      const originalWidth = data.imageInfo?.original_shape?.[1] || 1;
+      const originalHeight = data.imageInfo?.original_shape?.[0] || 1;
       const aspectRatio = originalWidth / originalHeight;
 
       let imageWidth = contentWidth;
@@ -226,10 +230,9 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
     pdf.setFont("helvetica", "normal");
 
     // Severity
-    const severityText = `Severity Level: ${
-      data.report.severity_level.charAt(0).toUpperCase() +
+    const severityText = `Severity Level: ${data.report.severity_level.charAt(0).toUpperCase() +
       data.report.severity_level.slice(1)
-    }`;
+      }`;
     pdf.text(severityText, margin, yPosition);
     yPosition += 8;
 
@@ -348,7 +351,7 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
     pdf.text(`File: ${data.fileName}`, margin, yPosition);
     yPosition += 6;
 
-    if (data.imageInfo.original_shape) {
+    if (data.imageInfo?.original_shape) {
       pdf.text(
         `Original Image Size: ${data.imageInfo.original_shape.join("×")}`,
         margin,
@@ -357,7 +360,7 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
       yPosition += 6;
     }
 
-    if (data.imageInfo.converted_size) {
+    if (data.imageInfo?.converted_size) {
       pdf.text(
         `Processed Size: ${data.imageInfo.converted_size.join("×")}`,
         margin,
@@ -366,7 +369,7 @@ export const exportToPDF = async (data: PDFExportData): Promise<void> => {
       yPosition += 6;
     }
 
-    if (data.metadata.manufacturer) {
+    if (data.metadata?.manufacturer) {
       pdf.text(`Equipment: ${data.metadata.manufacturer}`, margin, yPosition);
       yPosition += 6;
     }

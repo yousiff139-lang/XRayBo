@@ -25,10 +25,11 @@ import { toast } from "sonner";
 
 interface DiagnosticReportComponentProps {
   predictions: Detection[];
-  metadata: DicomMetadata;
-  imageInfo: ImageInfo;
+  metadata: DicomMetadata | null;
+  imageInfo: ImageInfo | null;
   report?: DiagnosticReport;
   onReportGenerated?: (report: DiagnosticReport) => void;
+  onStartGenerating?: () => void;
   originalImageSrc?: string; // Add original image source for PDF annotation
 }
 
@@ -64,6 +65,7 @@ export function DiagnosticReportComponent({
   imageInfo,
   report: externalReport,
   onReportGenerated,
+  onStartGenerating,
   originalImageSrc, // Destructure originalImageSrc prop
 }: DiagnosticReportComponentProps) {
   const [report, setReport] = useState<DiagnosticReport | null>(
@@ -79,6 +81,9 @@ export function DiagnosticReportComponent({
 
   const handleGenerateReport = async () => {
     try {
+      // Notify parent that generation is starting
+      onStartGenerating?.();
+
       const response = await generateReport.mutateAsync({
         predictions,
         metadata,
@@ -101,7 +106,7 @@ export function DiagnosticReportComponent({
         detections: predictions,
         metadata,
         imageInfo,
-        fileName: metadata.patient_name || "diagnostic-report",
+        fileName: metadata?.patient_name || "diagnostic-report",
         originalImageSrc, // Include originalImageSrc in export data
       };
 

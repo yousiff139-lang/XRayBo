@@ -30,8 +30,8 @@ export function DetectionOverlay({
             key={detection.detection_id}
             className="absolute border-2"
             style={{
-              left: detection.x * scaleX,
-              top: detection.y * scaleY,
+              left: (detection.x - detection.width / 2) * scaleX,
+              top: (detection.y - detection.height / 2) * scaleY,
               width: detection.width * scaleX,
               height: detection.height * scaleY,
               borderColor: boxColor,

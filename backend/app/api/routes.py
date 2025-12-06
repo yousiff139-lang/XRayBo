@@ -134,7 +134,7 @@ async def detect_dental_conditions_dicom(
     """
 
     # Validate file type - DICOM files can have various content types
-    allowed_extensions = [".dcm", ".dicom", ".DCM", ".DICOM"]
+    allowed_extensions = [".dcm", ".dicom", ".DCM", ".DICOM", ".rvg", ".RVG"]
     file_extension = os.path.splitext(file.filename or "")[1] if file.filename else ""
 
     if (

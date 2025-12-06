@@ -25,12 +25,14 @@ interface ResultCardProps {
   fileState: DetectionProgress["files"][0];
   fileData?: ConvertedDicomData;
   onReportGenerated?: (fileId: string, report: DiagnosticReport) => void;
+  onStartGeneratingReport?: () => void;
 }
 
 export function ResultCard({
   fileState,
   fileData,
   onReportGenerated,
+  onStartGeneratingReport,
 }: ResultCardProps) {
   const handleReportGenerated = (report: DiagnosticReport) => {
     onReportGenerated?.(fileState.fileId, report);
@@ -53,7 +55,7 @@ export function ResultCard({
                 <span>
                   Detections: {fileState.result?.predictions.length || 0}
                 </span>
-                <span>Patient: {fileState.result?.metadata.patient_name}</span>
+                <span>Patient: {fileState.result?.metadata?.patient_name || 'N/A'}</span>
               </div>
             )}
             {fileState.status === "error" &&
@@ -145,45 +147,49 @@ export function ResultCard({
                 )}
                 <Separator />
 
-                {/* DICOM Metadata */}
-                <DicomMetadata metadata={fileState.result.metadata} />
+                {/* DICOM Metadata - only show if available */}
+                {fileState.result.metadata && (
+                  <DicomMetadata metadata={fileState.result.metadata} />
+                )}
 
                 <Separator />
 
-                {/* Image Info */}
-                <div>
-                  <h4 className="text-sm font-medium mb-2">
-                    Image Information
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs sm:text-sm">
-                    <span className="text-muted-foreground font-medium">
-                      Original Shape:
-                    </span>
-                    <span>
-                      {fileState.result.image_info.original_shape.join("×")}
-                    </span>
+                {/* Image Info - only show if available */}
+                {fileState.result.image_info && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">
+                      Image Information
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs sm:text-sm">
+                      <span className="text-muted-foreground font-medium">
+                        Original Shape:
+                      </span>
+                      <span>
+                        {fileState.result.image_info.original_shape.join("×")}
+                      </span>
 
-                    <span className="text-muted-foreground font-medium">
-                      Converted Format:
-                    </span>
-                    <span>{fileState.result.image_info.converted_format}</span>
+                      <span className="text-muted-foreground font-medium">
+                        Converted Format:
+                      </span>
+                      <span>{fileState.result.image_info.converted_format}</span>
 
-                    <span className="text-muted-foreground font-medium">
-                      Converted Size:
-                    </span>
-                    <span>
-                      {fileState.result.image_info.converted_size.join("×")}
-                    </span>
+                      <span className="text-muted-foreground font-medium">
+                        Converted Size:
+                      </span>
+                      <span>
+                        {fileState.result.image_info.converted_size.join("×")}
+                      </span>
 
-                    <span className="text-muted-foreground font-medium">
-                      Pixel Range:
-                    </span>
-                    <span>
-                      {fileState.result.image_info.pixel_array_min.toFixed(1)} -{" "}
-                      {fileState.result.image_info.pixel_array_max.toFixed(1)}
-                    </span>
+                      <span className="text-muted-foreground font-medium">
+                        Pixel Range:
+                      </span>
+                      <span>
+                        {fileState.result.image_info.pixel_array_min.toFixed(1)} -{" "}
+                        {fileState.result.image_info.pixel_array_max.toFixed(1)}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </TabsContent>
 
               <TabsContent value="report" className="mt-4">
@@ -193,6 +199,7 @@ export function ResultCard({
                   imageInfo={fileState.result.image_info}
                   report={fileState.diagnosticReport}
                   onReportGenerated={handleReportGenerated}
+                  onStartGenerating={onStartGeneratingReport}
                   originalImageSrc={fileData?.dataUrl} // Pass the original image source
                 />
               </TabsContent>

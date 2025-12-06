@@ -9,7 +9,7 @@ import {
   useDropzone,
 } from "@/components/ui/dropzone";
 import { CloudUploadIcon } from "lucide-react";
-import { convertDicomToImageUrl } from "@/lib/utils";
+import { convertDicomToImageUrl, isDicomFile, convertStandardImageToUrl } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { useDroppedFilesStore } from "@/lib/store";
 import { UseMutationResult } from "@tanstack/react-query";
@@ -36,8 +36,16 @@ export function DicomDropzone({
   const dropzone = useDropzone({
     onDropFile: async (file: File) => {
       try {
-        // Convert DICOM to image during upload
-        const convertedData = await convertDicomToImageUrl(file, "jpeg", 0.9);
+        let convertedData;
+
+        // Check if file is DICOM/RVG or standard image
+        if (isDicomFile(file)) {
+          // Convert DICOM to image during upload
+          convertedData = await convertDicomToImageUrl(file, "jpeg", 0.9);
+        } else {
+          // Handle standard image files (PNG/JPEG)
+          convertedData = await convertStandardImageToUrl(file);
+        }
 
         const fileData: ConvertedDicomData = {
           id: `${file.name}-${Date.now()}`, // Generate unique ID
@@ -55,10 +63,10 @@ export function DicomDropzone({
           result: fileData,
         };
       } catch (error) {
-        console.error("Failed to convert DICOM file:", error);
+        console.error("Failed to process file:", error);
         return {
           status: "error" as const,
-          error: "Failed to convert DICOM file",
+          error: isDicomFile(file) ? "Failed to convert DICOM file" : "Failed to load image file",
         };
       }
     },
@@ -82,7 +90,7 @@ export function DicomDropzone({
         <div className="">
           <div className="flex flex-col">
             <DropzoneDescription className="text-sm sm:text-base">
-              Please select DICOM (.dcm/.rvg) files you want to analyse
+              Upload dental X-ray images (.dcm, .rvg, .png, .jpg, .jpeg)
             </DropzoneDescription>
             <DropzoneMessage />
           </div>
@@ -91,7 +99,7 @@ export function DicomDropzone({
               <CloudUploadIcon className="size-6 sm:size-8" />
               <div>
                 <p className="font-semibold text-sm sm:text-base">
-                  Upload DICOM files
+                  Upload X-ray images
                 </p>
                 <p className="text-xs sm:text-sm text-muted-foreground">
                   Click here or drag and drop to upload

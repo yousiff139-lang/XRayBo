@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../styles/profile-card.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -45,78 +46,165 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  /* Teal-Cyan Light Theme - Soft teal grays with cyan accents */
+  --background: oklch(0.98 0.008 180);
+  --foreground: oklch(0.18 0.04 195);
+  --card: oklch(0.99 0.005 180);
+  --card-foreground: oklch(0.18 0.04 195);
+  --popover: oklch(0.99 0.005 180);
+  --popover-foreground: oklch(0.18 0.04 195);
+  --primary: oklch(0.55 0.14 195);
+  --primary-foreground: oklch(0.99 0.005 180);
+  --secondary: oklch(0.94 0.015 185);
+  --secondary-foreground: oklch(0.25 0.05 195);
+  --muted: oklch(0.94 0.015 185);
+  --muted-foreground: oklch(0.5 0.04 195);
+  --accent: oklch(0.90 0.025 185);
+  --accent-foreground: oklch(0.25 0.05 195);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
+  --border: oklch(0.88 0.02 185);
+  --input: oklch(0.90 0.018 185);
+  --ring: oklch(0.6 0.12 195);
+  --chart-1: oklch(0.65 0.16 190);
   --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --chart-3: oklch(0.55 0.12 195);
+  --chart-4: oklch(0.7 0.14 180);
+  --chart-5: oklch(0.45 0.1 200);
+  --sidebar: oklch(0.96 0.012 185);
+  --sidebar-foreground: oklch(0.18 0.04 195);
+  --sidebar-primary: oklch(0.55 0.14 195);
+  --sidebar-primary-foreground: oklch(0.99 0.005 180);
+  --sidebar-accent: oklch(0.92 0.02 185);
+  --sidebar-accent-foreground: oklch(0.25 0.05 195);
+  --sidebar-border: oklch(0.88 0.02 185);
+  --sidebar-ring: oklch(0.6 0.12 195);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* Dark Teal-Cyan Theme - Matching Developer Section */
+  --background: oklch(0.14 0.025 230);
+  --foreground: oklch(0.95 0.01 190);
+  --card: oklch(0.18 0.03 225);
+  --card-foreground: oklch(0.95 0.01 190);
+  --popover: oklch(0.18 0.03 225);
+  --popover-foreground: oklch(0.95 0.01 190);
+  --primary: oklch(0.72 0.14 195);
+  --primary-foreground: oklch(0.14 0.025 230);
+  --secondary: oklch(0.24 0.035 220);
+  --secondary-foreground: oklch(0.92 0.01 190);
+  --muted: oklch(0.22 0.03 225);
+  --muted-foreground: oklch(0.65 0.05 195);
+  --accent: oklch(0.26 0.04 215);
+  --accent-foreground: oklch(0.92 0.01 190);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: oklch(0.35 0.06 200 / 30%);
+  --input: oklch(0.4 0.08 195 / 25%);
+  --ring: oklch(0.65 0.12 195);
+  --chart-1: oklch(0.72 0.14 195);
+  --chart-2: oklch(0.65 0.16 190);
+  --chart-3: oklch(0.58 0.12 200);
+  --chart-4: oklch(0.68 0.10 185);
+  --chart-5: oklch(0.55 0.14 205);
+  --sidebar: oklch(0.16 0.028 228);
+  --sidebar-foreground: oklch(0.95 0.01 190);
+  --sidebar-primary: oklch(0.72 0.14 195);
+  --sidebar-primary-foreground: oklch(0.14 0.025 230);
+  --sidebar-accent: oklch(0.24 0.035 220);
+  --sidebar-accent-foreground: oklch(0.92 0.01 190);
+  --sidebar-border: oklch(0.35 0.06 200 / 25%);
+  --sidebar-ring: oklch(0.65 0.12 195);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Move Next.js Turbopack dev indicator to bottom-left */
+[data-nextjs-dialog-overlay],
+[data-nextjs-toast],
+nextjs-portal {
+  left: 24px !important;
+  right: auto !important;
+}
+
+/* Target the specific dev indicator container */
+body>nextjs-portal,
+#__next-build-indicator,
+[class*="nextjs-toast"] {
+  left: 24px !important;
+  right: auto !important;
+  bottom: 24px !important;
+}
+
+/* Spotlight animation */
+@keyframes spotlight {
+  0% {
+    opacity: 0;
+    transform: translate(-72%, -62%) scale(0.5);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -40%) scale(1);
+  }
+}
+
+.animate-spotlight {
+  animation: spotlight 2s ease 0.75s 1 forwards;
+}
+
+/* Loader spinner for Spline fallback */
+.loader {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--primary);
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+/* Slide animations */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
 }

@@ -47,8 +47,8 @@ export interface ImageInfo {
 
 export interface DicomDetectionResponse {
   predictions: Detection[];
-  metadata: DicomMetadata;
-  image_info: ImageInfo;
+  metadata: DicomMetadata | null;
+  image_info: ImageInfo | null;
 }
 
 export interface DicomDetectionResult extends DicomDetectionResponse {

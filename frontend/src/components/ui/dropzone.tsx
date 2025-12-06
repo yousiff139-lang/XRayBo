@@ -18,16 +18,16 @@ import { Button, ButtonProps } from "./button";
 
 type DropzoneResult<TUploadRes, TUploadError> =
   | {
-      status: "pending";
-    }
+    status: "pending";
+  }
   | {
-      status: "error";
-      error: TUploadError;
-    }
+    status: "error";
+    error: TUploadError;
+  }
   | {
-      status: "success";
-      result: TUploadRes;
-    };
+    status: "success";
+    result: TUploadRes;
+  };
 
 export type FileStatus<TUploadRes, TUploadError> = {
   id: string;
@@ -35,40 +35,40 @@ export type FileStatus<TUploadRes, TUploadError> = {
   file: File;
   tries: number;
 } & (
-  | {
+    | {
       status: "pending";
       result?: undefined;
       error?: undefined;
     }
-  | {
+    | {
       status: "error";
       error: TUploadError;
       result?: undefined;
     }
-  | {
+    | {
       status: "success";
       result: TUploadRes;
       error?: undefined;
     }
-);
+  );
 
 const fileStatusReducer = <TUploadRes, TUploadError>(
   state: FileStatus<TUploadRes, TUploadError>[],
   action:
     | {
-        type: "add";
-        id: string;
-        fileName: string;
-        file: File;
-      }
+      type: "add";
+      id: string;
+      fileName: string;
+      file: File;
+    }
     | {
-        type: "remove";
-        id: string;
-      }
+      type: "remove";
+      id: string;
+    }
     | ({
-        type: "update-status";
-        id: string;
-      } & DropzoneResult<TUploadRes, TUploadError>)
+      type: "update-status";
+      id: string;
+    } & DropzoneResult<TUploadRes, TUploadError>)
 ): FileStatus<TUploadRes, TUploadError>[] => {
   switch (action.type) {
     case "add":
@@ -177,11 +177,11 @@ type UseDropzoneProps<TUploadRes, TUploadError> = {
   shiftOnMaxFiles?: boolean;
 } & (TUploadError extends string
   ? {
-      shapeUploadError?: (error: TUploadError) => string | void;
-    }
+    shapeUploadError?: (error: TUploadError) => string | void;
+  }
   : {
-      shapeUploadError: (error: TUploadError) => string | void;
-    });
+    shapeUploadError: (error: TUploadError) => string | void;
+  });
 
 interface UseDropzoneReturn<TUploadRes, TUploadError> {
   getRootProps: ReturnType<typeof rootUseDropzone>["getRootProps"];
@@ -388,8 +388,8 @@ const useDropzone = <TUploadRes, TUploadError = string>(
 const DropZoneContext = createContext<UseDropzoneReturn<any, any>>({
   getRootProps: () => ({} as never),
   getInputProps: () => ({} as never),
-  onRemoveFile: async () => {},
-  onRetry: async () => {},
+  onRemoveFile: async () => { },
+  onRetry: async () => { },
   canRetry: () => false,
   fileStatuses: [],
   isInvalid: false,
@@ -503,8 +503,8 @@ interface DropzoneFileListContext<TUploadRes, TUploadError> {
 const DropzoneFileListContext = createContext<
   DropzoneFileListContext<unknown, unknown>
 >({
-  onRemoveFile: async () => {},
-  onRetry: async () => {},
+  onRemoveFile: async () => { },
+  onRetry: async () => { },
   fileStatus: {} as FileStatus<unknown, unknown>,
   canRetry: false,
   dropzoneId: "",
@@ -749,9 +749,6 @@ const DropzoneTrigger = forwardRef<HTMLLabelElement, DropzoneTriggerProps>(
         {children}
         <input
           {...context.getInputProps({
-            style: {
-              display: undefined,
-            },
             className: "sr-only",
             tabIndex: undefined,
           })}

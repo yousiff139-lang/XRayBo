@@ -9,6 +9,7 @@ dependencies = [
     "gdcm>=1.1",
     "inference-sdk>=0.50.3",
     "langchain>=0.3.25",
+    "langchain-google-genai>=2.1.12",
     "langchain-openai>=0.3.21",
     "pillow>=11.2.1",
     "pydantic-settings>=2.9.1",

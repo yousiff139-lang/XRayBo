@@ -84,8 +84,13 @@ export function useDicomDetection() {
           const formData = new FormData();
           formData.append("file", file.originalFile);
 
+          // Determine endpoint based on file type
+          const extension = file.fileName.toLowerCase().split('.').pop();
+          const isDicom = ['dcm', 'dicom', 'rvg'].includes(extension || '');
+          const endpoint = isDicom ? "/detect-dicom" : "/detect";
+
           const response = await apiClient.post<DicomDetectionResponse>(
-            "/detect-dicom",
+            endpoint,
             formData,
             {
               headers: {
@@ -94,8 +99,13 @@ export function useDicomDetection() {
             }
           );
 
+          // Normalize the response format for standard images
+          // The /detect endpoint returns { predictions: [...] }
+          // The /detect-dicom endpoint returns { predictions: [...], metadata: {...}, image_info: {...} }
           const result: DicomDetectionResult = {
-            ...response.data,
+            predictions: response.data.predictions || [],
+            metadata: response.data.metadata || null,
+            image_info: response.data.image_info || null,
             fileId: file.id,
             fileName: file.fileName,
           };

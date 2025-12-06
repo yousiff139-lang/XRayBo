@@ -91,3 +91,50 @@ export async function convertDicomToBlob(
   const response = await fetch(dataUrl);
   return response.blob();
 }
+
+/**
+ * Check if a file is a DICOM/RVG format based on extension
+ * @param file - The file to check
+ * @returns boolean - True if file is DICOM/RVG format
+ */
+export function isDicomFile(file: File): boolean {
+  const extension = file.name.toLowerCase().split('.').pop();
+  return ['dcm', 'dicom', 'rvg'].includes(extension || '');
+}
+
+/**
+ * Convert a standard image file (PNG/JPEG) to a data URL for display
+ * @param file - The image file to convert
+ * @returns Promise with dataUrl, width, and height
+ */
+export async function convertStandardImageToUrl(
+  file: File
+): Promise<{
+  dataUrl: string;
+  width: number;
+  height: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+
+      // Create an image to get dimensions
+      const img = new Image();
+      img.onload = () => {
+        resolve({
+          dataUrl,
+          width: img.width,
+          height: img.height,
+        });
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = dataUrl;
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+

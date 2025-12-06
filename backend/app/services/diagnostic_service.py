@@ -1,145 +1,74 @@
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import logging
-import asyncio
-from functools import lru_cache
-
-from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema import BaseOutputParser
-from langchain.schema.output_parser import OutputParserException
 import json
+from functools import lru_cache
+import httpx
 
 from ..models.detection import Detection, DicomMetadata, DiagnosticReport
-from ..core.config import Settings, get_settings
+from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
-class DiagnosticReportParser(BaseOutputParser[DiagnosticReport]):
-    """Custom parser for diagnostic report output"""
+DENTAL_PROMPT = """You are a senior dental radiologist AI assistant providing comprehensive diagnostic reports based on dental X-ray AI detection results.
 
-    def parse(self, text: str) -> DiagnosticReport:
-        try:
-            # Try to parse as JSON first
-            if text.strip().startswith("{"):
-                data = json.loads(text)
-                return DiagnosticReport(**data)
+IMPORTANT: You must provide DETAILED, COMPREHENSIVE analysis. Do NOT give one-line generic responses.
 
-            # If not JSON, parse structured text format
-            lines = text.strip().split("\n")
-            report_lines = []
-            summary = ""
-            recommendations = []
-            severity_level = "moderate"
+## DETECTED CONDITIONS IN THIS X-RAY:
+{detections}
 
-            current_section = None
+## PATIENT INFORMATION:
+{patient_info}
 
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
+## YOUR TASK:
+Analyze the above detection results and provide a COMPREHENSIVE diagnostic report. For EACH detected condition, you MUST include:
 
-                if line.lower().startswith("summary:"):
-                    current_section = "summary"
-                    summary = line[8:].strip()
-                elif line.lower().startswith("recommendations:"):
-                    current_section = "recommendations"
-                elif line.lower().startswith("severity:"):
-                    current_section = "severity"
-                    severity_level = line[9:].strip().lower()
-                elif line.lower().startswith("report:"):
-                    current_section = "report"
-                    report_lines.append(line[7:].strip())
-                elif current_section == "report":
-                    report_lines.append(line)
-                elif current_section == "recommendations" and line.startswith("-"):
-                    recommendations.append(line[1:].strip())
-                elif current_section == "summary" and not any(
-                    x in line.lower()
-                    for x in ["recommendations:", "severity:", "report:"]
-                ):
-                    summary += " " + line
+1. **Condition Identification**: What specific dental pathology is present (e.g., "Dental caries affecting the mesial surface", "Periapical lesion with radiolucency")
 
-            return DiagnosticReport(
-                report="\n".join(report_lines) if report_lines else text,
-                summary=summary or "No specific summary provided",
-                recommendations=recommendations or ["Consult with dental professional"],
-                severity_level=(
-                    severity_level
-                    if severity_level in ["low", "moderate", "high"]
-                    else "moderate"
-                ),
-            )
+2. **Clinical Significance**: Why this finding is important, potential complications if untreated
 
-        except Exception as e:
-            logger.error(f"Failed to parse diagnostic report: {e}")
-            # Fallback to basic report
-            return DiagnosticReport(
-                report=text,
-                summary="Automated analysis completed",
-                recommendations=[
-                    "Consult with dental professional for detailed evaluation"
-                ],
-                severity_level="moderate",
-            )
+3. **Detailed Treatment Plan**:
+   - First-line treatment option with explanation
+   - Alternative treatments if first-line fails
+   - Expected timeline for treatment
+   - Estimated number of dental visits needed
+
+4. **Prognosis**: Expected outcome with proper treatment
+
+5. **Home Care Instructions**: What the patient should do at home
+
+6. **Follow-up Schedule**: When to return for check-up
+
+## SEVERITY ASSESSMENT:
+- "low" = Early stage, monitor at next regular checkup (6 months)
+- "moderate" = Requires treatment within 1-3 months to prevent progression
+- "high" = Urgent attention needed within 1-2 weeks, risk of pain/infection/tooth loss
+
+## RESPONSE FORMAT (Return ONLY this JSON, no other text):
+{{
+    "report": "Write a DETAILED paragraph (minimum 150 words) describing each finding, its clinical significance, and treatment rationale. Be specific about tooth locations, sizes, and clinical implications.",
+    "summary": "2-3 sentence summary highlighting the most critical finding and primary recommended action",
+    "recommendations": [
+        "SPECIFIC recommendation 1 with timeline (e.g., 'Schedule composite filling within 2 weeks for the detected cavity')",
+        "SPECIFIC recommendation 2 (e.g., 'Apply prescription fluoride gel twice daily')",
+        "SPECIFIC recommendation 3 (e.g., 'Use soft-bristled toothbrush and brush for 2 minutes twice daily')",
+        "SPECIFIC follow-up recommendation (e.g., 'Return for progress X-ray in 6 months')"
+    ],
+    "severity_level": "low|moderate|high"
+}}
+
+Remember: Patients deserve DETAILED explanations, not generic one-liners. Be thorough and professional."""
 
 
 class DiagnosticReportService:
-    """Service for generating diagnostic reports using LangChain and OpenAI"""
+    """Service for generating diagnostic reports using Google Gemini REST API"""
 
     def __init__(self):
         self.settings = get_settings()
-        self.llm = ChatOpenAI(
-            model=self.settings.openai_model,
-            api_key=self.settings.openai_api_key,
-            temperature=0.1,  # Low temperature for consistent medical reports
-        )
-        self.parser = DiagnosticReportParser()
-
-        # Create the prompt template
-        self.prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """You are a dental AI assistant that generates diagnostic reports based on AI detection results. 
-Your role is to analyze dental X-ray detection results and provide a structured, professional medical report.
-
-Guidelines:
-- Provide objective analysis based on the detection data
-- Use professional medical terminology
-- Include specific location and confidence information
-- Suggest appropriate follow-up actions
-- Maintain a clinical, informative tone
-- Always recommend professional consultation
-
-Return your response in this exact JSON format:
-{{
-    "report": "Full detailed report text",
-    "summary": "Brief summary of key findings",
-    "recommendations": ["List", "of", "specific", "recommendations"],
-    "severity_level": "low|moderate|high"
-}}""",
-                ),
-                (
-                    "human",
-                    """Analyze these dental detection results and generate a diagnostic report:
-
-Detection Results:
-{detections}
-
-Patient Information:
-{patient_info}
-
-Image Information:
-{image_info}
-
-Please provide a comprehensive diagnostic report with specific findings, recommendations, and severity assessment.""",
-                ),
-            ]
-        )
-
-        # Create the chain
-        self.chain = self.prompt | self.llm | self.parser
+        self.api_key = self.settings.gemini_api_key
+        self.model = self.settings.gemini_model
+        self.api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        logger.info(f"DiagnosticReportService initialized with model: {self.model}")
 
     async def generate_diagnostic_report(
         self,
@@ -149,119 +78,189 @@ Please provide a comprehensive diagnostic report with specific findings, recomme
     ) -> DiagnosticReport:
         """Generate a diagnostic report from detection results"""
 
+        detection_text = self._format_detections(detections)
+        patient_info = self._format_patient_info(metadata)
+
+        prompt = DENTAL_PROMPT.format(
+            detections=detection_text,
+            patient_info=patient_info,
+        )
+
         try:
-            # Format detections for the prompt
-            detection_text = self._format_detections(detections)
-
-            # Format patient info
-            patient_info = self._format_patient_info(metadata)
-
-            # Format image info
-            image_info_text = self._format_image_info(image_info)
-
-            # return DiagnosticReport(
-            #     report=f"Automated dental analysis detected {len(detections)} findings. Professional evaluation recommended.",
-            #     summary=f"Analysis completed with {len(detections)} detections",
-            #     recommendations=[
-            #         "Schedule dental consultation",
-            #         "Professional radiographic interpretation needed",
-            #     ],
-            #     severity_level="moderate",
-            # )
-            # Run the chain asynchronously
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.chain.invoke(
-                    {
-                        "detections": detection_text,
-                        "patient_info": patient_info,
-                        "image_info": image_info_text,
-                    }
-                ),
-            )
-
-            return result
+            logger.info(f"Calling Gemini API with {len(detections)} detections")
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.api_url}?key={self.api_key}",
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.4,
+                            "maxOutputTokens": 4096,
+                            "topP": 0.95,
+                        }
+                    },
+                    headers={"Content-Type": "application/json"},
+                )
+                
+                logger.info(f"Gemini API response status: {response.status_code}")
+                
+                if response.status_code != 200:
+                    error_text = response.text
+                    logger.error(f"Gemini API error: {response.status_code} - {error_text}")
+                    raise Exception(f"Gemini API error: {response.status_code} - {error_text}")
+                
+                result = response.json()
+                logger.info(f"Gemini API response received successfully")
+                
+                # Extract text from response
+                if "candidates" not in result or len(result["candidates"]) == 0:
+                    logger.error(f"No candidates in Gemini response: {result}")
+                    raise Exception("No candidates in Gemini response")
+                
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+                logger.info(f"Gemini response text length: {len(text)} chars")
+                
+                return self._parse_response(text, detections)
 
         except Exception as e:
-            logger.error(f"Failed to generate diagnostic report: {e}")
-            # Return a fallback report
+            logger.error(f"Failed to generate diagnostic report: {e}", exc_info=True)
+            return self._create_fallback_report(detections)
+
+    def _parse_response(self, text: str, detections: List[Detection]) -> DiagnosticReport:
+        """Parse the Gemini response into a DiagnosticReport"""
+        try:
+            clean_text = text.strip()
+            
+            # Remove markdown code blocks
+            if "```json" in clean_text:
+                start = clean_text.find("```json") + 7
+                end = clean_text.find("```", start)
+                clean_text = clean_text[start:end].strip()
+            elif "```" in clean_text:
+                start = clean_text.find("```") + 3
+                end = clean_text.find("```", start)
+                clean_text = clean_text[start:end].strip()
+            
+            logger.info(f"Parsing JSON response: {clean_text[:200]}...")
+            
+            data = json.loads(clean_text)
+            
+            # Validate required fields
+            report = DiagnosticReport(
+                report=data.get("report", "Analysis complete"),
+                summary=data.get("summary", "See detailed analysis"),
+                recommendations=data.get("recommendations", ["Consult dental professional"]),
+                severity_level=data.get("severity_level", "moderate"),
+            )
+            
+            logger.info(f"Successfully parsed diagnostic report with {len(report.recommendations)} recommendations")
+            return report
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error: {e}, text: {text[:500]}")
+            # If JSON parsing fails, try to use the text as-is
             return DiagnosticReport(
-                report=f"Automated dental analysis detected {len(detections)} findings. Professional evaluation recommended.",
-                summary=f"Analysis completed with {len(detections)} detections",
-                recommendations=[
-                    "Schedule dental consultation",
-                    "Professional radiographic interpretation needed",
-                ],
+                report=text,
+                summary="AI analysis completed - see detailed report",
+                recommendations=["Review the detailed analysis above", "Consult dental professional"],
                 severity_level="moderate",
             )
+        except Exception as e:
+            logger.error(f"Failed to parse Gemini response: {e}")
+            return self._create_fallback_report(detections)
+
+    def _create_fallback_report(self, detections: List[Detection]) -> DiagnosticReport:
+        """Create a detailed fallback report when API fails"""
+        if not detections:
+            return DiagnosticReport(
+                report="No significant pathological findings were detected in this dental radiograph. The analyzed areas appear within normal limits.",
+                summary="No abnormalities detected. Routine dental care recommended.",
+                recommendations=[
+                    "Continue regular dental checkups every 6 months",
+                    "Maintain proper brushing technique twice daily",
+                    "Use dental floss daily",
+                    "Consider fluoride mouthwash for cavity prevention"
+                ],
+                severity_level="low",
+            )
+        
+        # Build detailed fallback based on detected conditions
+        conditions = [d.class_ for d in detections]
+        condition_counts = {}
+        for c in conditions:
+            condition_counts[c] = condition_counts.get(c, 0) + 1
+        
+        report_parts = [f"AI analysis has identified {len(detections)} area(s) of concern in this dental radiograph:\n"]
+        recommendations = []
+        severity = "moderate"
+        
+        for condition, count in condition_counts.items():
+            cond_lower = condition.lower()
+            
+            if "cavity" in cond_lower or "caries" in cond_lower:
+                report_parts.append(f"• {count} dental caries (cavity) detection(s): Dental caries represent demineralization of tooth structure caused by bacterial acid production. Early intervention with restorative treatment can prevent progression to pulp involvement.")
+                recommendations.extend([
+                    f"Schedule dental appointment for {count} detected cavit{'y' if count == 1 else 'ies'} - treatment with composite or amalgam filling recommended",
+                    "Reduce sugar intake and acidic beverages",
+                    "Use fluoride toothpaste and consider prescription-strength fluoride gel"
+                ])
+            elif "periapical" in cond_lower or "lesion" in cond_lower or "pa" in cond_lower:
+                severity = "high"
+                report_parts.append(f"• {count} periapical lesion detection(s): Periapical lesions indicate infection or inflammation at the tooth root apex, often resulting from pulp necrosis. This requires prompt endodontic evaluation.")
+                recommendations.extend([
+                    "URGENT: Schedule endodontic (root canal) evaluation within 1-2 weeks",
+                    "Monitor for increased pain, swelling, or fever - seek immediate care if symptoms worsen",
+                    "Antibiotics may be prescribed if active infection is present"
+                ])
+            else:
+                report_parts.append(f"• {count} {condition} detection(s): This finding requires professional dental evaluation to determine appropriate treatment.")
+                recommendations.append(f"Consult dental professional regarding {condition} finding")
+        
+        recommendations.append("Follow up as directed by your dental professional")
+        
+        return DiagnosticReport(
+            report="\n\n".join(report_parts),
+            summary=f"Detected {len(detections)} finding(s) requiring professional evaluation. {'Urgent attention recommended.' if severity == 'high' else 'Schedule dental appointment soon.'}",
+            recommendations=recommendations[:5],  # Limit to 5 recommendations
+            severity_level=severity,
+        )
 
     def _format_detections(self, detections: List[Detection]) -> str:
-        """Format detection results for the prompt"""
         if not detections:
-            return "No significant findings detected in the image."
+            return "No pathological findings detected in this X-ray."
 
         formatted = []
         for i, detection in enumerate(detections, 1):
+            conf_pct = detection.confidence * 100
+            conf_level = "HIGH" if conf_pct > 80 else "MODERATE" if conf_pct > 50 else "LOW"
+            
             formatted.append(
-                f"Detection {i}:\n"
+                f"FINDING #{i}:\n"
                 f"  - Condition: {detection.class_}\n"
-                f"  - Location: ({detection.x}, {detection.y}) with dimensions {detection.width}x{detection.height}\n"
-                f"  - Confidence: {detection.confidence:.2%}\n"
-                f"  - Detection ID: {detection.detection_id}"
+                f"  - AI Confidence: {conf_pct:.1f}% ({conf_level})\n"
+                f"  - Location: Position ({detection.x}, {detection.y}) in image\n"
+                f"  - Approximate Size: {detection.width} x {detection.height} pixels"
             )
-
         return "\n\n".join(formatted)
 
     def _format_patient_info(self, metadata: Optional[DicomMetadata]) -> str:
-        """Format patient information from DICOM metadata"""
         if not metadata:
-            return "Patient information not available from image metadata."
-
-        info_parts = []
-
+            return "Patient demographics not available from image metadata."
+        
+        parts = []
         if metadata.patient_id:
-            info_parts.append(f"Patient ID: {metadata.patient_id}")
+            parts.append(f"Patient ID: {metadata.patient_id}")
         if metadata.patient_sex:
-            info_parts.append(f"Sex: {metadata.patient_sex}")
+            parts.append(f"Sex: {metadata.patient_sex}")
         if metadata.study_date:
-            info_parts.append(f"Study Date: {metadata.study_date}")
+            parts.append(f"Study Date: {metadata.study_date}")
         if metadata.modality:
-            info_parts.append(f"Imaging Modality: {metadata.modality}")
-        if metadata.institution_name:
-            info_parts.append(f"Institution: {metadata.institution_name}")
-
-        return (
-            "\n".join(info_parts)
-            if info_parts
-            else "Limited patient information available."
-        )
-
-    def _format_image_info(self, image_info: Optional[Dict[str, Any]]) -> str:
-        """Format image technical information"""
-        if not image_info:
-            return "Image technical details not available."
-
-        info_parts = []
-
-        if "original_shape" in image_info:
-            info_parts.append(f"Image dimensions: {image_info['original_shape']}")
-        if "photometric_interpretation" in image_info:
-            info_parts.append(
-                f"Photometric interpretation: {image_info['photometric_interpretation']}"
-            )
-        if "pixel_array_min" in image_info and "pixel_array_max" in image_info:
-            info_parts.append(
-                f"Pixel value range: {image_info['pixel_array_min']} - {image_info['pixel_array_max']}"
-            )
-
-        return (
-            "\n".join(info_parts)
-            if info_parts
-            else "Standard digital radiograph processing applied."
-        )
+            parts.append(f"Modality: {metadata.modality}")
+            
+        return "\n".join(parts) if parts else "Limited patient information available."
 
 
 @lru_cache()
 def get_diagnostic_report_service() -> DiagnosticReportService:
-    """Dependency injection for diagnostic report service"""
     return DiagnosticReportService()
