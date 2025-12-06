@@ -46,6 +46,7 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
     const [displayedText, setDisplayedText] = useState("");
     const [isTyping, setIsTyping] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
+    const [voicesReady, setVoicesReady] = useState(false);
     const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null);
     const speakRetryRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -129,18 +130,42 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
     useEffect(() => {
         if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-        // Trigger voice loading
-        window.speechSynthesis.getVoices();
+        // Function to check and set voices ready
+        const checkVoices = () => {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                setVoicesReady(true);
+                return true;
+            }
+            return false;
+        };
+
+        // Check immediately
+        if (checkVoices()) return;
 
         // Chrome requires listening for voiceschanged
         const handleVoicesChanged = () => {
-            window.speechSynthesis.getVoices();
+            checkVoices();
         };
 
         window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
 
+        // Also poll a few times as backup
+        const pollInterval = setInterval(() => {
+            if (checkVoices()) {
+                clearInterval(pollInterval);
+            }
+        }, 100);
+
+        // Clear polling after 2 seconds
+        const pollTimeout = setTimeout(() => {
+            clearInterval(pollInterval);
+        }, 2000);
+
         return () => {
             window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+            clearInterval(pollInterval);
+            clearTimeout(pollTimeout);
             if (speakRetryRef.current) {
                 clearTimeout(speakRetryRef.current);
             }
@@ -157,6 +182,8 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
             return;
         }
 
+        // Reset the spoken state ref when state changes so new state can be spoken
+        // This is needed because we're resetting visibility
         setIsVisible(false);
         const timer = setTimeout(() => {
             setIsVisible(true);
@@ -188,10 +215,10 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
         return () => clearInterval(interval);
     }, [isVisible, message, isTyping, state, conditionsFound, enhancedMessage]);
 
-    // Speak when bubble becomes visible - triggers on each state change
+    // Speak when bubble becomes visible AND voices are ready
     useEffect(() => {
-        // Only speak when visible becomes true
-        if (!isVisible) return;
+        // Need both visibility and voices to be ready
+        if (!isVisible || !voicesReady) return;
 
         // Check other conditions at the time of speaking
         if (!isRobotLoaded || isMuted) return;
@@ -205,8 +232,7 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
         }, 600);
 
         return () => clearTimeout(speechDelay);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isVisible, state]); // Trigger on visibility and state changes
+    }, [isVisible, state, voicesReady, isRobotLoaded, isMuted, conditionsFound, enhancedMessage, message, speakMessage]);
 
     // Toggle mute
     const toggleMute = () => {
