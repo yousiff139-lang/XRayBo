@@ -3,6 +3,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Bot, Volume2, VolumeX } from "lucide-react";
 
+// ElevenLabs Configuration
+const ELEVENLABS_API_KEY = "sk_1e6dde8d81f8c2abce2458fbe7def4a38be489090b76145e";
+const ELEVENLABS_VOICE_ID = "ltUipZFlFUhlYModrYoo";
+
 export type RobotState =
     | "idle"
     | "file_uploaded"
@@ -46,13 +50,14 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
     const [displayedText, setDisplayedText] = useState("");
     const [isTyping, setIsTyping] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [voicesReady, setVoicesReady] = useState(false);
-    const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null);
-    const speakRetryRef = useRef<NodeJS.Timeout | null>(null);
-    // Track the last state that was actually spoken - null means nothing spoken yet
+    const [isReady, setIsReady] = useState(false);
+    const [pendingSpeech, setPendingSpeech] = useState<string | null>(null);
+    // Track the last state that was actually spoken
     const lastSpokenStateRef = useRef<RobotState | null>(null);
-    // Track if speech is currently pending/scheduled
-    const speechScheduledRef = useRef(false);
+    // Audio element for ElevenLabs playback
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    // Track current audio URL for cleanup
+    const currentAudioUrlRef = useRef<string | null>(null);
 
     const message = MESSAGES[state];
 
@@ -61,139 +66,122 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
         ? `✅ Analysis complete! I found **${conditionsFound} condition${conditionsFound !== 1 ? 's' : ''}**. Click **Generate Diagnosis Report** for detailed recommendations!`
         : message;
 
-    // Get the best male voice available
-    const getBestMaleVoice = useCallback(() => {
-        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-
-        const voices = window.speechSynthesis.getVoices();
-        if (voices.length === 0) return null;
-
-        // Priority order for deep, natural male voices
-        const voicePriorities = [
-            // Windows voices
-            (v: SpeechSynthesisVoice) => v.name.includes('David'),
-            (v: SpeechSynthesisVoice) => v.name.includes('Mark'),
-            (v: SpeechSynthesisVoice) => v.name.includes('Guy'),
-            // Google voices
-            (v: SpeechSynthesisVoice) => v.name.includes('Google US English') && !v.name.includes('Female'),
-            (v: SpeechSynthesisVoice) => v.name.includes('Google UK English Male'),
-            // macOS voices
-            (v: SpeechSynthesisVoice) => v.name.includes('Alex'),
-            (v: SpeechSynthesisVoice) => v.name.includes('Daniel'),
-            // Generic English male
-            (v: SpeechSynthesisVoice) => v.lang.startsWith('en') && v.name.toLowerCase().includes('male'),
-            // Any English voice as fallback
-            (v: SpeechSynthesisVoice) => v.lang.startsWith('en-US'),
-            (v: SpeechSynthesisVoice) => v.lang.startsWith('en'),
-        ];
-
-        for (const check of voicePriorities) {
-            const voice = voices.find(check);
-            if (voice) return voice;
-        }
-
-        return voices[0];
-    }, []);
-
-    // Speech function - deep podcast-like male voice
-    const speakMessage = useCallback((text: string, currentState: RobotState, retryCount = 0) => {
-        if (isMuted || typeof window === 'undefined' || !('speechSynthesis' in window)) {
-            speechScheduledRef.current = false;
+    // ElevenLabs Text-to-Speech function
+    const speakWithElevenLabs = useCallback(async (text: string, currentState: RobotState) => {
+        if (isMuted) {
             return;
         }
 
-        // Cancel any ongoing speech
-        window.speechSynthesis.cancel();
+        // Stop any currently playing audio
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+        }
 
-        const voices = window.speechSynthesis.getVoices();
-
-        // If voices aren't loaded yet, retry after a delay (up to 10 retries for initial load)
-        if (voices.length === 0 && retryCount < 10) {
-            speakRetryRef.current = setTimeout(() => {
-                speakMessage(text, currentState, retryCount + 1);
-            }, 300);
-            return;
+        // Cleanup previous audio URL
+        if (currentAudioUrlRef.current) {
+            URL.revokeObjectURL(currentAudioUrlRef.current);
+            currentAudioUrlRef.current = null;
         }
 
         const cleanText = cleanTextForSpeech(text);
-        const utterance = new SpeechSynthesisUtterance(cleanText);
 
-        // Deep, podcast-like male voice settings
-        utterance.pitch = 0.85;   // Slightly lower for deeper voice
-        utterance.rate = 0.92;    // Slightly slower for podcast feel
-        utterance.volume = 1.0;
+        try {
+            const response = await fetch(
+                `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Accept": "audio/mpeg",
+                        "Content-Type": "application/json",
+                        "xi-api-key": ELEVENLABS_API_KEY,
+                    },
+                    body: JSON.stringify({
+                        text: cleanText,
+                        model_id: "eleven_turbo_v2_5",
+                        voice_settings: {
+                            stability: 0.5,
+                            similarity_boost: 0.75,
+                        },
+                    }),
+                }
+            );
 
-        // Get the best male voice
-        const voice = getBestMaleVoice();
-        if (voice) {
-            utterance.voice = voice;
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("ElevenLabs API error:", response.status, response.statusText, "Details:", errorText);
+                return;
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            currentAudioUrlRef.current = audioUrl;
+
+            const audio = new Audio(audioUrl);
+            audioRef.current = audio;
+
+            audio.onplay = () => {
+                lastSpokenStateRef.current = currentState;
+            };
+
+            audio.onerror = () => {
+                console.error("Audio playback error");
+            };
+
+            audio.onended = () => {
+                if (currentAudioUrlRef.current === audioUrl) {
+                    URL.revokeObjectURL(audioUrl);
+                    currentAudioUrlRef.current = null;
+                }
+            };
+
+            await audio.play();
+        } catch (error) {
+            console.error("ElevenLabs TTS error:", error);
+        }
+    }, [isMuted]);
+
+    // Generate unique mount ID on each page load
+    const hasTriedInitialSpeechRef = useRef(false);
+
+    // AudioContext ref for priming audio system
+    const audioContextRef = useRef<AudioContext | null>(null);
+
+    // Mark as ready on mount and try to prime AudioContext for autoplay
+    useEffect(() => {
+        hasTriedInitialSpeechRef.current = false;
+        lastSpokenStateRef.current = null;
+
+        // Try to create and resume AudioContext to unlock audio
+        try {
+            const AudioContext = window.AudioContext || (window as unknown as { webkitAudioContext: typeof window.AudioContext }).webkitAudioContext;
+            if (AudioContext) {
+                audioContextRef.current = new AudioContext();
+                // Try to resume immediately - this might unlock audio in some browsers
+                audioContextRef.current.resume().then(() => {
+                    console.log("🔊 AudioContext resumed - audio might be enabled");
+                }).catch(() => {
+                    console.log("⚠️ AudioContext could not resume automatically");
+                });
+            }
+        } catch (e) {
+            console.log("AudioContext not available");
         }
 
-        // Mark this state as spoken when speech starts
-        utterance.onstart = () => {
-            lastSpokenStateRef.current = currentState;
-            speechScheduledRef.current = false;
-        };
-
-        utterance.onerror = () => {
-            speechScheduledRef.current = false;
-        };
-
-        utterance.onend = () => {
-            speechScheduledRef.current = false;
-        };
-
-        speechSynthRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
-    }, [isMuted, getBestMaleVoice]);
-
-    // Load voices on mount - more aggressive loading
-    useEffect(() => {
-        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-        // Function to check and set voices ready
-        const checkVoices = () => {
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                setVoicesReady(true);
-                return true;
-            }
-            return false;
-        };
-
-        // Check immediately
-        if (checkVoices()) return;
-
-        // Chrome requires listening for voiceschanged
-        const handleVoicesChanged = () => {
-            checkVoices();
-        };
-
-        window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
-
-        // Poll more aggressively for initial load
-        const pollInterval = setInterval(() => {
-            if (checkVoices()) {
-                clearInterval(pollInterval);
-            }
-        }, 50);
-
-        // Clear polling after 5 seconds (longer timeout)
-        const pollTimeout = setTimeout(() => {
-            clearInterval(pollInterval);
-            // Force set voices ready even if none found - some browsers have issues
-            setVoicesReady(true);
-        }, 5000);
+        const timer = setTimeout(() => {
+            setIsReady(true);
+        }, 500);
 
         return () => {
-            window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
-            clearInterval(pollInterval);
-            clearTimeout(pollTimeout);
-            if (speakRetryRef.current) {
-                clearTimeout(speakRetryRef.current);
+            clearTimeout(timer);
+            if (audioRef.current) {
+                audioRef.current.pause();
             }
-            if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
+            if (currentAudioUrlRef.current) {
+                URL.revokeObjectURL(currentAudioUrlRef.current);
+            }
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
             }
         };
     }, []);
@@ -210,7 +198,7 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
             setIsVisible(true);
             setIsTyping(true);
             setDisplayedText("");
-        }, 300); // Slight delay after robot loads
+        }, 300);
         return () => clearTimeout(timer);
     }, [state, isRobotLoaded]);
 
@@ -231,49 +219,127 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
                 setIsTyping(false);
                 clearInterval(interval);
             }
-        }, 20); // Speed of typing
+        }, 20);
 
         return () => clearInterval(interval);
     }, [isVisible, message, isTyping, state, conditionsFound, enhancedMessage]);
 
-    // Main speech trigger effect - runs when conditions change
+    // TRY TO PLAY ON MOUNT - if browser blocks, queue for click
     useEffect(() => {
-        // Skip if we don't have all required conditions
-        if (!isVisible || !voicesReady || !isRobotLoaded || isMuted) {
+        if (!isVisible || !isReady || !isRobotLoaded || isMuted) {
             return;
         }
 
-        // Skip if this state was already spoken
-        if (lastSpokenStateRef.current === state) {
+        if (hasTriedInitialSpeechRef.current) {
             return;
         }
 
-        // Skip if speech is already scheduled
-        if (speechScheduledRef.current) {
-            return;
-        }
+        hasTriedInitialSpeechRef.current = true;
 
-        // Mark speech as scheduled
-        speechScheduledRef.current = true;
+        const textToSpeak = message;
 
-        // Speak after a short delay to let typewriter start
-        const speechDelay = setTimeout(() => {
-            const textToSpeak = state === "prediction_complete" && conditionsFound !== undefined
-                ? enhancedMessage
-                : message;
-            speakMessage(textToSpeak, state);
+        // Try to play immediately
+        const tryPlay = async () => {
+            console.log("🎙️ Attempting auto-play for:", state);
+
+            try {
+                const cleanText = cleanTextForSpeech(textToSpeak);
+                const response = await fetch(
+                    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Accept": "audio/mpeg",
+                            "Content-Type": "application/json",
+                            "xi-api-key": ELEVENLABS_API_KEY,
+                        },
+                        body: JSON.stringify({
+                            text: cleanText,
+                            model_id: "eleven_turbo_v2_5",
+                            voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+                        }),
+                    }
+                );
+
+                if (!response.ok) {
+                    console.error("ElevenLabs API error");
+                    return;
+                }
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                currentAudioUrlRef.current = audioUrl;
+
+                const audio = new Audio(audioUrl);
+                audioRef.current = audio;
+
+                audio.onplay = () => {
+                    lastSpokenStateRef.current = state;
+                    console.log("✅ Auto-play succeeded!");
+                };
+
+                audio.onended = () => {
+                    if (currentAudioUrlRef.current === audioUrl) {
+                        URL.revokeObjectURL(audioUrl);
+                        currentAudioUrlRef.current = null;
+                    }
+                };
+
+                await audio.play();
+
+            } catch (error: unknown) {
+                // Browser blocked autoplay - queue for click
+                if (error instanceof Error && error.name === 'NotAllowedError') {
+                    console.log("⚠️ Autoplay blocked - click anywhere to enable audio");
+                    setPendingSpeech(textToSpeak);
+                } else {
+                    console.error("Speech error:", error);
+                }
+            }
+        };
+
+        tryPlay();
+    }, [isVisible, isReady, isRobotLoaded, isMuted, state, message]);
+
+    // Play pending speech when user clicks (fallback for autoplay block)
+    useEffect(() => {
+        if (!pendingSpeech) return;
+
+        const handleClick = () => {
+            console.log("🎙️ Playing queued speech after click");
+            speakWithElevenLabs(pendingSpeech, state);
+            setPendingSpeech(null);
+            document.removeEventListener('click', handleClick);
+        };
+
+        document.addEventListener('click', handleClick);
+        return () => document.removeEventListener('click', handleClick);
+    }, [pendingSpeech, state, speakWithElevenLabs]);
+
+    // Speak when state changes (for non-idle states)
+    useEffect(() => {
+        if (!isVisible || !isReady || !isRobotLoaded || isMuted) return;
+        if (state === "idle") return;
+        if (lastSpokenStateRef.current === state) return;
+
+        const textToSpeak = state === "prediction_complete" && conditionsFound !== undefined
+            ? enhancedMessage
+            : message;
+
+        const delay = setTimeout(() => {
+            console.log("🎙️ Speaking state change:", state);
+            speakWithElevenLabs(textToSpeak, state);
         }, 600);
 
-        return () => {
-            clearTimeout(speechDelay);
-            speechScheduledRef.current = false;
-        };
-    }, [isVisible, state, voicesReady, isRobotLoaded, isMuted, conditionsFound, enhancedMessage, message, speakMessage]);
+        return () => clearTimeout(delay);
+    }, [isVisible, state, isReady, isRobotLoaded, isMuted, conditionsFound, enhancedMessage, message, speakWithElevenLabs]);
 
     // Toggle mute
     const toggleMute = () => {
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
+        // Stop any currently playing ElevenLabs audio
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
         }
         setIsMuted(!isMuted);
     };
