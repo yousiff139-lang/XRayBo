@@ -6,8 +6,9 @@ import { useDroppedFilesStore } from "@/lib/store";
 import { SplineScene } from "@/components/ui/splite";
 import { Spotlight } from "@/components/ui/spotlight";
 import { RobotChatBubble, type RobotState } from "@/components/robot-chat-bubble";
+import { ConsentModal } from "@/components/consent-modal";
 import { Brain } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 export default function Home() {
   const { files } = useDroppedFilesStore();
@@ -15,6 +16,12 @@ export default function Home() {
   const [robotState, setRobotState] = useState<RobotState>("idle");
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [isRobotLoaded, setIsRobotLoaded] = useState(false);
+  const [hasConsented, setHasConsented] = useState(false);
+
+  // Handle consent acceptance
+  const handleConsent = useCallback(() => {
+    setHasConsented(true);
+  }, []);
 
   const handlePredict = async () => {
     if (files.length === 0) return;
@@ -73,6 +80,9 @@ export default function Home() {
 
   return (
     <div className="h-screen overflow-hidden relative bg-background">
+      {/* Consent Modal - Must accept before using */}
+      <ConsentModal onAccept={handleConsent} />
+
       {/* Spotlight Effect */}
       <Spotlight
         className="-top-40 left-0 md:left-60 md:-top-20"
@@ -139,21 +149,36 @@ export default function Home() {
           </div>
         </div>
 
-        {/* RIGHT: 3D Robot with Chat Bubble */}
+        {/* RIGHT: 3D Robot with Chat Bubble - Only load after consent */}
         <div className="lg:w-[55%] h-full relative">
-          {/* Robot Chat Bubble - Only shows after robot loads */}
-          <RobotChatBubble
-            state={robotState}
-            conditionsFound={conditionsFound}
-            isRobotLoaded={isRobotLoaded}
-          />
+          {hasConsented ? (
+            <>
+              {/* Robot Chat Bubble - Only shows after robot loads */}
+              <RobotChatBubble
+                state={robotState}
+                conditionsFound={conditionsFound}
+                isRobotLoaded={isRobotLoaded}
+                hasConsented={hasConsented}
+              />
 
-          {/* 3D Robot */}
-          <SplineScene
-            scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
-            className="w-full h-full"
-            onLoad={handleRobotLoad}
-          />
+              {/* 3D Robot */}
+              <SplineScene
+                scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
+                className="w-full h-full"
+                onLoad={handleRobotLoad}
+              />
+            </>
+          ) : (
+            /* Placeholder before consent - subtle visual */
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center opacity-30">
+                <Brain className="size-16 mx-auto mb-4 text-primary/50" />
+                <p className="text-sm text-muted-foreground">
+                  Accept terms to meet your AI assistant
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

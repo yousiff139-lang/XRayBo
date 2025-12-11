@@ -20,6 +20,7 @@ interface RobotChatBubbleProps {
     fileName?: string;
     conditionsFound?: number;
     isRobotLoaded?: boolean;
+    hasConsented?: boolean;
 }
 
 const MESSAGES: Record<RobotState, string> = {
@@ -45,13 +46,11 @@ function cleanTextForSpeech(text: string): string {
         .trim();
 }
 
-export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoaded = true }: RobotChatBubbleProps) {
+export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoaded = true, hasConsented = false }: RobotChatBubbleProps) {
     const [isVisible, setIsVisible] = useState(false);
     const [displayedText, setDisplayedText] = useState("");
     const [isTyping, setIsTyping] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [isReady, setIsReady] = useState(false);
-    const [pendingSpeech, setPendingSpeech] = useState<string | null>(null);
     // Track the last state that was actually spoken
     const lastSpokenStateRef = useRef<RobotState | null>(null);
     // Audio element for ElevenLabs playback
@@ -66,11 +65,47 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
         ? `✅ Analysis complete! I found **${conditionsFound} condition${conditionsFound !== 1 ? 's' : ''}**. Click **Generate Diagnosis Report** for detailed recommendations!`
         : message;
 
-    // ElevenLabs Text-to-Speech function
+
+    // Fallback to browser's built-in speech synthesis
+    const speakWithBrowserTTS = useCallback((text: string, currentState: RobotState) => {
+        if (!('speechSynthesis' in window)) {
+            console.log("Browser TTS not supported");
+            return;
+        }
+
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        utterance.onstart = () => {
+            lastSpokenStateRef.current = currentState;
+            console.log("🔊 Browser TTS started for:", currentState);
+        };
+
+        utterance.onerror = (e) => {
+            // Ignore "interrupted" and "not-allowed" errors (common with autoplay)
+            if (e.error === 'interrupted' || e.error === 'not-allowed') {
+                console.log("⚠️ Browser TTS blocked by autoplay policy");
+                return;
+            }
+            console.error("Browser TTS error:", e.error);
+        };
+
+        window.speechSynthesis.speak(utterance);
+    }, []);
+
+    // ElevenLabs Text-to-Speech function with fallback
     const speakWithElevenLabs = useCallback(async (text: string, currentState: RobotState) => {
         if (isMuted) {
             return;
         }
+
+        // Mark as spoken immediately to prevent duplicate calls
+        lastSpokenStateRef.current = currentState;
 
         // Stop any currently playing audio
         if (audioRef.current) {
@@ -110,6 +145,9 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error("ElevenLabs API error:", response.status, response.statusText, "Details:", errorText);
+                // Fallback to browser TTS
+                console.log("⚠️ Falling back to browser TTS");
+                speakWithBrowserTTS(cleanText, currentState);
                 return;
             }
 
@@ -120,12 +158,13 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
             const audio = new Audio(audioUrl);
             audioRef.current = audio;
 
-            audio.onplay = () => {
-                lastSpokenStateRef.current = currentState;
-            };
-
-            audio.onerror = () => {
-                console.error("Audio playback error");
+            audio.onerror = (e) => {
+                const errorDetails = audio.error
+                    ? `Code: ${audio.error.code}, Message: ${audio.error.message}`
+                    : 'Unknown error';
+                console.error("Audio playback error:", errorDetails, e);
+                // Fallback to browser TTS
+                speakWithBrowserTTS(cleanText, currentState);
             };
 
             audio.onended = () => {
@@ -138,18 +177,17 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
             await audio.play();
         } catch (error) {
             console.error("ElevenLabs TTS error:", error);
+            // Fallback to browser TTS on network error
+            console.log("⚠️ Falling back to browser TTS due to network error");
+            speakWithBrowserTTS(cleanText, currentState);
         }
-    }, [isMuted]);
-
-    // Generate unique mount ID on each page load
-    const hasTriedInitialSpeechRef = useRef(false);
+    }, [isMuted, speakWithBrowserTTS]);
 
     // AudioContext ref for priming audio system
     const audioContextRef = useRef<AudioContext | null>(null);
 
-    // Mark as ready on mount and try to prime AudioContext for autoplay
+    // Prime AudioContext on mount and cleanup on unmount
     useEffect(() => {
-        hasTriedInitialSpeechRef.current = false;
         lastSpokenStateRef.current = null;
 
         // Try to create and resume AudioContext to unlock audio
@@ -168,12 +206,7 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
             console.log("AudioContext not available");
         }
 
-        const timer = setTimeout(() => {
-            setIsReady(true);
-        }, 500);
-
         return () => {
-            clearTimeout(timer);
             if (audioRef.current) {
                 audioRef.current.pause();
             }
@@ -224,115 +257,67 @@ export function RobotChatBubble({ state, fileName, conditionsFound, isRobotLoade
         return () => clearInterval(interval);
     }, [isVisible, message, isTyping, state, conditionsFound, enhancedMessage]);
 
-    // TRY TO PLAY ON MOUNT - if browser blocks, queue for click
+    // SPEECH TRIGGER - synced with chat bubble visibility (triggers when bubble appears)
+    const previousVisibleRef = useRef(false);
+
     useEffect(() => {
-        if (!isVisible || !isReady || !isRobotLoaded || isMuted) {
-            return;
-        }
+        // Detect when visibility changes from false to true (bubble just appeared)
+        const bubbleJustAppeared = isVisible && !previousVisibleRef.current;
+        previousVisibleRef.current = isVisible;
 
-        if (hasTriedInitialSpeechRef.current) {
-            return;
-        }
+        // Only trigger voice when bubble becomes visible
+        if (!bubbleJustAppeared) return;
 
-        hasTriedInitialSpeechRef.current = true;
+        // Don't speak if muted
+        if (isMuted) return;
 
-        const textToSpeak = message;
-
-        // Try to play immediately
-        const tryPlay = async () => {
-            console.log("🎙️ Attempting auto-play for:", state);
-
-            try {
-                const cleanText = cleanTextForSpeech(textToSpeak);
-                const response = await fetch(
-                    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Accept": "audio/mpeg",
-                            "Content-Type": "application/json",
-                            "xi-api-key": ELEVENLABS_API_KEY,
-                        },
-                        body: JSON.stringify({
-                            text: cleanText,
-                            model_id: "eleven_turbo_v2_5",
-                            voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-                        }),
-                    }
-                );
-
-                if (!response.ok) {
-                    console.error("ElevenLabs API error");
-                    return;
-                }
-
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
-                currentAudioUrlRef.current = audioUrl;
-
-                const audio = new Audio(audioUrl);
-                audioRef.current = audio;
-
-                audio.onplay = () => {
-                    lastSpokenStateRef.current = state;
-                    console.log("✅ Auto-play succeeded!");
-                };
-
-                audio.onended = () => {
-                    if (currentAudioUrlRef.current === audioUrl) {
-                        URL.revokeObjectURL(audioUrl);
-                        currentAudioUrlRef.current = null;
-                    }
-                };
-
-                await audio.play();
-
-            } catch (error: unknown) {
-                // Browser blocked autoplay - queue for click
-                if (error instanceof Error && error.name === 'NotAllowedError') {
-                    console.log("⚠️ Autoplay blocked - click anywhere to enable audio");
-                    setPendingSpeech(textToSpeak);
-                } else {
-                    console.error("Speech error:", error);
-                }
-            }
-        };
-
-        tryPlay();
-    }, [isVisible, isReady, isRobotLoaded, isMuted, state, message]);
-
-    // Play pending speech when user clicks (fallback for autoplay block)
-    useEffect(() => {
-        if (!pendingSpeech) return;
-
-        const handleClick = () => {
-            console.log("🎙️ Playing queued speech after click");
-            speakWithElevenLabs(pendingSpeech, state);
-            setPendingSpeech(null);
-            document.removeEventListener('click', handleClick);
-        };
-
-        document.addEventListener('click', handleClick);
-        return () => document.removeEventListener('click', handleClick);
-    }, [pendingSpeech, state, speakWithElevenLabs]);
-
-    // Speak when state changes (for non-idle states)
-    useEffect(() => {
-        if (!isVisible || !isReady || !isRobotLoaded || isMuted) return;
-        if (state === "idle") return;
+        // Don't speak if we already spoke this state
         if (lastSpokenStateRef.current === state) return;
 
+        // Don't speak if user hasn't consented yet (audio would be blocked)
+        if (!hasConsented) {
+            console.log("⚠️ Waiting for user consent before playing audio");
+            return;
+        }
+
+        // Get the text to speak for this state
         const textToSpeak = state === "prediction_complete" && conditionsFound !== undefined
             ? enhancedMessage
             : message;
 
-        const delay = setTimeout(() => {
-            console.log("🎙️ Speaking state change:", state);
-            speakWithElevenLabs(textToSpeak, state);
-        }, 600);
+        console.log("🎙️ Chat bubble appeared, speaking state:", state);
 
-        return () => clearTimeout(delay);
-    }, [isVisible, state, isReady, isRobotLoaded, isMuted, conditionsFound, enhancedMessage, message, speakWithElevenLabs]);
+        // Speak immediately when bubble appears (user has consented)
+        speakWithElevenLabs(textToSpeak, state);
+    }, [isVisible, state, isMuted, conditionsFound, enhancedMessage, message, speakWithElevenLabs, hasConsented]);
+
+    // SPEAK FIRST MESSAGE when consent is given (bubble already visible)
+    const previousConsentRef = useRef(false);
+
+    useEffect(() => {
+        // Detect when consent changes from false to true
+        const justConsented = hasConsented && !previousConsentRef.current;
+        previousConsentRef.current = hasConsented;
+
+        // Only trigger when user just consented
+        if (!justConsented) return;
+
+        // Only if bubble is visible and we haven't spoken yet
+        if (!isVisible || isMuted) return;
+        if (lastSpokenStateRef.current === state) return;
+
+        // Get the text to speak
+        const textToSpeak = state === "prediction_complete" && conditionsFound !== undefined
+            ? enhancedMessage
+            : message;
+
+        console.log("🎙️ User just consented, speaking first message:", state);
+
+        // Small delay to ensure audio context is ready after user interaction
+        setTimeout(() => {
+            speakWithElevenLabs(textToSpeak, state);
+        }, 100);
+    }, [hasConsented, isVisible, isMuted, state, conditionsFound, enhancedMessage, message, speakWithElevenLabs]);
 
     // Toggle mute
     const toggleMute = () => {

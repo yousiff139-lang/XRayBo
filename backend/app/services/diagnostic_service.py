@@ -10,65 +10,83 @@ from ..core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-DENTAL_PROMPT = """You are a senior dental radiologist AI assistant providing comprehensive diagnostic reports based on dental X-ray AI detection results.
+DENTAL_PROMPT = """You are a board-certified dental radiologist with 20+ years of clinical experience. You MUST provide EXTREMELY DETAILED diagnostic reports.
 
-IMPORTANT: You must provide DETAILED, COMPREHENSIVE analysis. Do NOT give one-line generic responses.
+## ABSOLUTE REQUIREMENTS:
+1. The "report" field MUST be AT LEAST 500 WORDS - this is NON-NEGOTIABLE
+2. You MUST write multiple detailed paragraphs, not one-liners
+3. Each detected condition needs its own detailed analysis section
+4. Include specific anatomical locations, treatment procedures, and timelines
+5. A dentist will use this report - make it clinically comprehensive
 
-## DETECTED CONDITIONS IN THIS X-RAY:
+## DETECTED CONDITIONS:
 {detections}
 
-## PATIENT INFORMATION:
+## PATIENT INFO:
 {patient_info}
 
+## EXAMPLE OF WHAT YOUR REPORT SHOULD LOOK LIKE:
+
+For a single cavity detection, the report should be similar to this (adapt based on actual findings):
+
+---
+**RADIOGRAPHIC ANALYSIS:**
+
+Upon careful examination of the submitted dental radiograph, AI-assisted detection has identified a carious lesion located in the posterior region. The lesion presents as a well-defined radiolucent area consistent with demineralization of tooth structure. Based on the radiographic appearance, the caries appears to extend beyond the enamel layer and has progressed into the dentin, suggesting a moderate-stage cavity that requires prompt intervention.
+
+**CLINICAL SIGNIFICANCE:**
+
+Dental caries at this stage represents active bacterial infection where Streptococcus mutans and other acidogenic bacteria have penetrated the enamel's protective barrier. The dentin, being more porous and containing dentinal tubules that communicate with the pulp, allows for faster progression of decay. If left untreated for 3-6 months, this lesion could progress to involve the pulp chamber, potentially leading to irreversible pulpitis, periapical abscess formation, or the need for root canal therapy or extraction. Early intervention at this stage offers an excellent prognosis with conservative restorative treatment.
+
+**RECOMMENDED TREATMENT PROTOCOL:**
+
+The primary treatment recommendation is a direct composite resin restoration. The procedure involves local anesthesia (2% lidocaine with 1:100,000 epinephrine or articaine for profound anesthesia), complete caries excavation using round carbide burs and spoon excavators, selective enamel etching with 37% phosphoric acid, application of a universal dental adhesive system, and incremental placement of a nanofilled or microhybrid composite resin in 2mm layers with light curing. Estimated chair time is 45-60 minutes. Alternative treatment options include glass ionomer cement if moisture control is challenging, or amalgam restoration if the cavity is extensive and in a high-stress area.
+
+**PROGNOSIS AND FOLLOW-UP:**
+
+With proper restoration, the prognosis is excellent with expected longevity of 7-15 years for composite restorations. The patient should return in 2 weeks for a post-operative check to evaluate adaptation and occlusion, then resume regular 6-month recall visits. Bitewing radiographs should be taken annually to monitor for recurrent decay at the restoration margins.
+
+**HOME CARE INSTRUCTIONS:**
+
+The patient should use fluoridated toothpaste (1450 ppm fluoride) twice daily with proper brushing technique, floss daily with special attention to the restored area, limit sugar intake especially between meals, and consider using a fluoride mouthwash before bed. Any sensitivity lasting more than 2 weeks or spontaneous pain should prompt an immediate return visit.
+---
+
 ## YOUR TASK:
-Analyze the above detection results and provide a COMPREHENSIVE diagnostic report. For EACH detected condition, you MUST include:
+Write a similarly detailed report for the ACTUAL detected conditions. Adapt the content based on what was actually found (cavities, periapical lesions, etc.). DO NOT copy the example - create original clinical content.
 
-1. **Condition Identification**: What specific dental pathology is present (e.g., "Dental caries affecting the mesial surface", "Periapical lesion with radiolucency")
-
-2. **Clinical Significance**: Why this finding is important, potential complications if untreated
-
-3. **Detailed Treatment Plan**:
-   - First-line treatment option with explanation
-   - Alternative treatments if first-line fails
-   - Expected timeline for treatment
-   - Estimated number of dental visits needed
-
-4. **Prognosis**: Expected outcome with proper treatment
-
-5. **Home Care Instructions**: What the patient should do at home
-
-6. **Follow-up Schedule**: When to return for check-up
-
-## SEVERITY ASSESSMENT:
-- "low" = Early stage, monitor at next regular checkup (6 months)
-- "moderate" = Requires treatment within 1-3 months to prevent progression
-- "high" = Urgent attention needed within 1-2 weeks, risk of pain/infection/tooth loss
-
-## RESPONSE FORMAT (Return ONLY this JSON, no other text):
+## JSON RESPONSE FORMAT:
 {{
-    "report": "Write a DETAILED paragraph (minimum 150 words) describing each finding, its clinical significance, and treatment rationale. Be specific about tooth locations, sizes, and clinical implications.",
-    "summary": "2-3 sentence summary highlighting the most critical finding and primary recommended action",
+    "report": "[Your detailed 500+ word report here with multiple paragraphs covering: Radiographic Analysis, Clinical Significance, Treatment Protocol, Prognosis, and Home Care. Be specific about each detected condition.]",
+    
+    "summary": "[3-4 sentences: What was found, how serious it is, what to do first, expected outcome]",
+    
     "recommendations": [
-        "SPECIFIC recommendation 1 with timeline (e.g., 'Schedule composite filling within 2 weeks for the detected cavity')",
-        "SPECIFIC recommendation 2 (e.g., 'Apply prescription fluoride gel twice daily')",
-        "SPECIFIC recommendation 3 (e.g., 'Use soft-bristled toothbrush and brush for 2 minutes twice daily')",
-        "SPECIFIC follow-up recommendation (e.g., 'Return for progress X-ray in 6 months')"
+        "IMMEDIATE: [Urgent action needed, e.g., 'Schedule restorative appointment within 2 weeks to prevent pulp involvement']",
+        "TREATMENT: [Specific procedure, e.g., 'Class II MOD composite restoration with selective enamel etching technique']",
+        "MEDICATION: [If needed, e.g., 'Prescribe Ibuprofen 400mg every 6 hours PRN for post-operative discomfort']",
+        "PREVENTION: [e.g., 'Apply fluoride varnish to adjacent teeth, recommend prescription-strength fluoride toothpaste']",
+        "HOME CARE: [e.g., 'Brush with soft-bristled toothbrush using modified Bass technique, floss daily']",
+        "FOLLOW-UP: [e.g., 'Return in 2 weeks for post-op evaluation, then regular 6-month recalls with annual bitewings']"
     ],
+    
     "severity_level": "low|moderate|high"
 }}
 
-Remember: Patients deserve DETAILED explanations, not generic one-liners. Be thorough and professional."""
+CRITICAL: Your "report" field MUST be detailed and comprehensive like the example above. One-line responses are UNACCEPTABLE and will fail review."""
+
+# Google Gemini API key
+GEMINI_API_KEY = "AIzaSyC77FymOjTr-iKo3lV1rD1HiLixYPGEBT0"
 
 
 class DiagnosticReportService:
-    """Service for generating diagnostic reports using Google Gemini REST API"""
+    """Service for generating diagnostic reports using Google Gemini"""
 
     def __init__(self):
         self.settings = get_settings()
-        self.api_key = self.settings.gemini_api_key
-        self.model = self.settings.gemini_model
+        self.api_key = GEMINI_API_KEY
+        self.model = "gemini-2.0-flash"  # Fast and capable Gemini model
         self.api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
-        logger.info(f"DiagnosticReportService initialized with model: {self.model}")
+        logger.info(f"DiagnosticReportService initialized with Gemini model: {self.model}")
 
     async def generate_diagnostic_report(
         self,
@@ -89,18 +107,30 @@ class DiagnosticReportService:
         try:
             logger.info(f"Calling Gemini API with {len(detections)} detections")
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            # Combine system prompt and user prompt for Gemini
+            full_prompt = f"""You are a board-certified dental radiologist. You MUST provide extremely detailed, comprehensive diagnostic reports. Your reports should be at least 500 words with multiple paragraphs covering radiographic analysis, clinical significance, treatment protocols, prognosis, and home care instructions. One-line responses are unacceptable.
+
+{prompt}"""
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
                     f"{self.api_url}?key={self.api_key}",
                     json={
-                        "contents": [{"parts": [{"text": prompt}]}],
+                        "contents": [
+                            {
+                                "parts": [
+                                    {"text": full_prompt}
+                                ]
+                            }
+                        ],
                         "generationConfig": {
-                            "temperature": 0.4,
-                            "maxOutputTokens": 4096,
-                            "topP": 0.95,
+                            "temperature": 0.3,
+                            "maxOutputTokens": 8192,
                         }
                     },
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json"
+                    },
                 )
                 
                 logger.info(f"Gemini API response status: {response.status_code}")
@@ -113,7 +143,7 @@ class DiagnosticReportService:
                 result = response.json()
                 logger.info(f"Gemini API response received successfully")
                 
-                # Extract text from response
+                # Extract text from Gemini response format
                 if "candidates" not in result or len(result["candidates"]) == 0:
                     logger.error(f"No candidates in Gemini response: {result}")
                     raise Exception("No candidates in Gemini response")
@@ -174,8 +204,8 @@ class DiagnosticReportService:
         """Create a detailed fallback report when API fails"""
         if not detections:
             return DiagnosticReport(
-                report="No significant pathological findings were detected in this dental radiograph. The analyzed areas appear within normal limits.",
-                summary="No abnormalities detected. Routine dental care recommended.",
+                report="**RADIOGRAPHIC ANALYSIS:**\n\nNo significant pathological findings were detected in this dental radiograph.\n\nThe analyzed areas appear within normal radiographic limits. No evidence of carious lesions, periapical pathology, or other abnormalities was identified.\n\n**RECOMMENDATION:**\n\nContinue with routine preventive dental care and regular check-ups.",
+                summary="No abnormalities detected.\n\nRoutine dental care recommended.",
                 recommendations=[
                     "Continue regular dental checkups every 6 months",
                     "Maintain proper brushing technique twice daily",
@@ -191,7 +221,7 @@ class DiagnosticReportService:
         for c in conditions:
             condition_counts[c] = condition_counts.get(c, 0) + 1
         
-        report_parts = [f"AI analysis has identified {len(detections)} area(s) of concern in this dental radiograph:\n"]
+        report_parts = [f"**RADIOGRAPHIC ANALYSIS:**\n\nAI analysis has identified {len(detections)} area(s) of concern in this dental radiograph."]
         recommendations = []
         severity = "moderate"
         
@@ -199,30 +229,41 @@ class DiagnosticReportService:
             cond_lower = condition.lower()
             
             if "cavity" in cond_lower or "caries" in cond_lower:
-                report_parts.append(f"• {count} dental caries (cavity) detection(s): Dental caries represent demineralization of tooth structure caused by bacterial acid production. Early intervention with restorative treatment can prevent progression to pulp involvement.")
+                report_parts.append(f"**DENTAL CARIES ({count} detection{'s' if count > 1 else ''}):**\n\nDental caries represent demineralization of tooth structure caused by bacterial acid production. The detected lesion(s) indicate areas where enamel and potentially dentin have been compromised by the carious process.\n\nEarly intervention with restorative treatment is essential to prevent progression to pulp involvement, which could necessitate more extensive treatment such as root canal therapy.")
                 recommendations.extend([
-                    f"Schedule dental appointment for {count} detected cavit{'y' if count == 1 else 'ies'} - treatment with composite or amalgam filling recommended",
-                    "Reduce sugar intake and acidic beverages",
-                    "Use fluoride toothpaste and consider prescription-strength fluoride gel"
+                    f"IMMEDIATE: Schedule dental appointment for {count} detected cavit{'y' if count == 1 else 'ies'}",
+                    "TREATMENT: Composite or amalgam filling recommended",
+                    "PREVENTION: Reduce sugar intake and acidic beverages",
+                    "HOME CARE: Use fluoride toothpaste and consider prescription-strength fluoride gel"
                 ])
             elif "periapical" in cond_lower or "lesion" in cond_lower or "pa" in cond_lower:
                 severity = "high"
-                report_parts.append(f"• {count} periapical lesion detection(s): Periapical lesions indicate infection or inflammation at the tooth root apex, often resulting from pulp necrosis. This requires prompt endodontic evaluation.")
+                report_parts.append(f"**PERIAPICAL PATHOLOGY ({count} detection{'s' if count > 1 else ''}):**\n\nPeriapical lesions indicate infection or inflammation at the tooth root apex, often resulting from pulp necrosis. This finding suggests bacterial invasion has extended beyond the tooth structure into the periapical tissues.\n\nThis requires prompt endodontic evaluation to prevent further spread of infection and potential complications.")
                 recommendations.extend([
                     "URGENT: Schedule endodontic (root canal) evaluation within 1-2 weeks",
-                    "Monitor for increased pain, swelling, or fever - seek immediate care if symptoms worsen",
-                    "Antibiotics may be prescribed if active infection is present"
+                    "WARNING: Monitor for increased pain, swelling, or fever",
+                    "MEDICATION: Antibiotics may be prescribed if active infection is present",
+                    "FOLLOW-UP: Seek immediate care if symptoms worsen"
                 ])
             else:
-                report_parts.append(f"• {count} {condition} detection(s): This finding requires professional dental evaluation to determine appropriate treatment.")
+                report_parts.append(f"**{condition.upper()} ({count} detection{'s' if count > 1 else ''}):**\n\nThis finding requires professional dental evaluation to determine appropriate treatment. The AI has identified this area as requiring clinical attention.")
                 recommendations.append(f"Consult dental professional regarding {condition} finding")
         
-        recommendations.append("Follow up as directed by your dental professional")
+        report_parts.append("**PROFESSIONAL EVALUATION RECOMMENDED:**\n\nPlease consult with a qualified dental professional for a comprehensive clinical examination and definitive diagnosis. This AI-generated report is intended for informational purposes only.")
+        
+        recommendations.append("FOLLOW-UP: Schedule appointment as directed by your dental professional")
+        
+        # Build formatted summary with line breaks
+        summary_parts = [
+            f"Detected {len(detections)} condition{'s' if len(detections) > 1 else ''} requiring professional evaluation.",
+            "",
+            "Urgent attention recommended." if severity == "high" else "Schedule dental appointment soon."
+        ]
         
         return DiagnosticReport(
             report="\n\n".join(report_parts),
-            summary=f"Detected {len(detections)} finding(s) requiring professional evaluation. {'Urgent attention recommended.' if severity == 'high' else 'Schedule dental appointment soon.'}",
-            recommendations=recommendations[:5],  # Limit to 5 recommendations
+            summary="\n".join(summary_parts),
+            recommendations=recommendations[:6],  # Limit to 6 recommendations
             severity_level=severity,
         )
 
